@@ -134,18 +134,22 @@ def create_keyword_table_partial(df):
 
 def create_keyword_table(table, threshold, article_amount):
     keyword_table = pd.DataFrame([['keyword', 'name', 'value', 0, 'section']],
-                                 columns=['keyword', 'name', 'value', 'total_counts', 'section'])
-    for kw in table.keyword.unique():
+                                 columns=['keyword', 'name', 'value', 'counts', 'section'])
+    for i, kw in enumerate(table.keyword.unique()):
+        if i%100 == 0: print(str(i) + ' / 64537')
+
         entries = table[table.keyword == kw]
-        max_count = entries['counts'].max()
-        total_counts = entries['counts'].sum()
+        entries_comb = entries.groupby(by=['keyword', 'section']).sum()
+        max_count = entries_comb.max()[0]
+        total_counts = entries_comb.sum()[0]
         if max_count >= threshold*total_counts:
-            idx = entries['counts'].idxmax()
-            section = table.loc[idx, 'section']
+            section = entries_comb.idxmax()[0][1]
+            # idx = entries['counts'].idxmax()
+            # section = table.loc[idx, 'section']
         else:
             section = '*UNSPECIFIC*'
-        new_row = pd.DataFrame(data=[[kw, kw[0], kw[1], total_counts, section]],
-                               columns=['keyword', 'name', 'value', 'counts', 'section'])
+        new_row = pd.DataFrame(data=  [[ kw,        kw[0],  kw[1],   total_counts, section]],
+                               columns=['keyword', 'name', 'value', 'counts',     'section'])
         keyword_table = keyword_table.append(new_row)
         keyword_table['id'] = range(0, keyword_table.shape[0])
         keyword_table['prob'] = np.log(keyword_table.counts / article_amount)
@@ -196,14 +200,20 @@ def main():
             else:
                 df_year = pd.concat([df_year, df_new], ignore_index=True)
 
-        with open(cwd + "/data/archive/articles_" + year + ".pickle", "wb") as f:
-            pickle.dump(df_year, f)
+    for year in ['2016', '2017', '2018']:  # #TODO: delete only this line
+
+        with open(cwd + "/data/archive/articles_" + year + ".pickle", "rb") as f:
+            df_year = pickle.load(f)
 
         print(df_year.shape)
         df_year = clean_articles(df=df_year, word_count=20)
         df_year = clean_sections(df_year)
         df_year = df_year[~(df_year['section'] == '*DELETE*')]  # drop sections that are not interesting for keyword-analysis
         print(df_year.shape)
+
+
+        with open(cwd + "/data/archive/articles_" + year + "_clean.pickle", "wb") as f:
+            pickle.dump(df_year, f)
 
         # create keyword table for one year
         table_year = create_keyword_table_partial(df_year)
@@ -213,7 +223,7 @@ def main():
 
     for i, year in enumerate(['2016', '2017', '2018']):
 
-        with open(cwd + "/data/archive/articles_" + year + ".pickle", "rb") as f:
+        with open(cwd + "/data/archive/articles_" + year + "_clean.pickle", "rb") as f:
             df_year = pickle.load(f)
         with open(cwd + "/data/table_keywords_partial_" + year + ".pickle", "rb") as f:
             table_year = pickle.load(f)
@@ -224,6 +234,7 @@ def main():
         else:
             table = pd.concat([table, table_year], ignore_index=True)
             df = pd.concat([df, df_year], ignore_index=True)
+        print(df.shape, table.shape)
 
     with open(cwd + "/data/archive/df_16-18.pickle", "wb") as f:
         pickle.dump(df, f)
