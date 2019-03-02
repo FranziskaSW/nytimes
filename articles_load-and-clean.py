@@ -9,6 +9,12 @@ global cwd
 cwd = os.getcwd()
 
 def get_data(year, month):
+    """
+    pulls the meta data of the articles that were published during that month and saves it in archive,
+    uses nytimes search api
+    :param year: str
+    :param month: str
+    """
     archive_key = 'Jctp3rj1ZdOaLQiMArs79ioGnwvfK1pC'
     month_api = year + '/' + month
     if len(month) == 1:
@@ -29,6 +35,11 @@ def get_data(year, month):
 
 
 def getSectionDict(name):
+    """
+    groups section_name into 12 meta-sections
+    :param name: section_name in from search api
+    :return: name of meta-section
+    """
     world = ['World', 'Africa', 'Americas', 'Asia', 'Asia Pacific', 'Australia', 'Canada', 'Europe', 'Middle East',
              'What in the World', 'Opinion | The World', 'Foreign']
     if name in world: return 'World'
@@ -80,10 +91,24 @@ def getSectionDict(name):
 
 
 def extr_headline_main(field):
+    """
+    extracts main headline from api entry
+    :param field: api entry structure
+    :return: headline
+    """
     return field['main']
 
 
 def clean_articles(df, word_count):
+    """
+    clean the articles, only keep articles with
+    - more than 20 words
+    - that are certain 'type_of_material'
+    - drop duplicate articles, if same headline appears in same section
+    :param df: DataFrame of articles
+    :param word_count: minimum amount of words, not included
+    :return: cleaned DataFrame of articles
+    """
     df = df[~(df.word_count.isnull())]
     df['word_count'] = df.word_count.apply(lambda x: int(x))
     df = df[df.word_count > word_count]
@@ -94,6 +119,11 @@ def clean_articles(df, word_count):
     return df
 
 def clean_sections(df):
+    """
+    uses getSectionDict to rename sections to their meta-section
+    :param df: DataFrame of articles
+    :return: DataFrame of articles, section renamed
+    """
     df['section'] = df.section_name.apply(lambda x: getSectionDict(x))
     without_section = df[df.section == '*UNKNOWN*']  # the articles that haven't had a section_name,
                                                      # many of them have news_desk entry
@@ -106,12 +136,22 @@ def clean_sections(df):
 
 
 def extr_keywords_step1(field):
+    """
+    brings entry as it comes from api in more handy format
+    :param field: 'keywords' entry of api
+    :return: tupel (name, value)
+    """
     keyword = field
     keyword_tup = (keyword['name'], keyword['value'])
     return keyword_tup
 
 
 def create_keyword_table_partial(df):
+    """
+    uses article DataFrame to create table of keywords. How often keyword appeared in which section
+    :param df: articles DataFrame
+    :return: DataFrame of keywords (keyword, section, counts)
+    """
     dfs = df[['_id', 'section', 'pub_date', 'headline', 'keywords']]
     # expand columns from keyword_dict
     d1 = dfs.keywords.apply(pd.Series).merge(dfs, left_index=True, right_index=True).drop(["keywords"], axis=1)
@@ -133,6 +173,16 @@ def create_keyword_table_partial(df):
 
 
 def create_keyword_table(table, threshold, article_amount):
+    """
+    table: table of keywords where one keyword can have multiply rows, if it appeared in different sections
+    function reduces this table to keyword_table, where each keyword only appears once and section is the most likely
+    section (if section is more frequent than threshold value), if no section stands out, tag as '*UNSPECIFIC*'
+    :param table: table of keywords
+    :param threshold: to what percentage keyword needs to appear in one section, that this section overweights
+    the others
+    :param article_amount: amount of articles of full data set, used to calculate frequency of keywords
+    :return: table of keywords where every keyword only appears once
+    """
     keyword_table = pd.DataFrame([['keyword', 'name', 'value', 0, 'section']],
                                  columns=['keyword', 'name', 'value', 'counts', 'section'])
     for i, kw in enumerate(table.keyword.unique()):
@@ -163,6 +213,12 @@ def create_keyword_table(table, threshold, article_amount):
 
 
 def extr_keywords(field, table_keywords):
+    """
+    translate keywords structure as it comes from api to list of keywords ids (ids from table_keywords)
+    :param field: article keywords as it comes from api
+    :param table_keywords: table of keywords (created by create_keyword_table)
+    :return: list of keyword ids
+    """
     keyword_list = list()
     for keyword in field:
         try:
@@ -200,17 +256,15 @@ def main():
             else:
                 df_year = pd.concat([df_year, df_new], ignore_index=True)
 
-    for year in ['2016', '2017', '2018']:  # #TODO: delete only this line
-
         with open(cwd + "/data/archive/articles_" + year + ".pickle", "rb") as f:
             df_year = pickle.load(f)
 
         print(df_year.shape)
         df_year = clean_articles(df=df_year, word_count=20)
         df_year = clean_sections(df_year)
-        df_year = df_year[~(df_year['section'] == '*DELETE*')]  # drop sections that are not interesting for keyword-analysis
+        # drop sections that are not interesting for keyword-analysis
+        df_year = df_year[~(df_year['section'] == '*DELETE*')]
         print(df_year.shape)
-
 
         with open(cwd + "/data/archive/articles_" + year + "_clean.pickle", "wb") as f:
             pickle.dump(df_year, f)
@@ -220,7 +274,7 @@ def main():
         with open(cwd + "/data/table_keywords_partial_" + year + ".pickle", "wb") as f:
             pickle.dump(table_year, f)
 
-
+    # combine keyword tables of singe years to full keyword table
     for i, year in enumerate(['2016', '2017', '2018']):
 
         with open(cwd + "/data/archive/articles_" + year + "_clean.pickle", "rb") as f:
